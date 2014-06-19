@@ -117,16 +117,106 @@ boolean isDoneCharging() {
   return digitalRead(CHARGE_PIN);
 }
 
+float parseFloat(char * tok) {
+  float value = 0;
+  value = atoi(tok);
+//  Serial.print("value ");
+//  Serial.println(value);
+  while((*tok != '.') && (*tok != '\0')) tok++;
+  if (*tok == '.') {
+    tok++;
+    float decimal = atoi(tok)/pow(10,strlen(tok));
+//    Serial.print("dec ");
+//    Serial.println(decimal);
+    value = value + (value < 0 ? -decimal : decimal);
+    
+  }
+//  Serial.print("val ");
+//  Serial.println(value);
+  return value;
+}
+
+//int entireColorCycle(Adafruit_NeoPixel * leds, int n)
+//int rotatingColorCycle(Adafruit_NeoPixel * leds, int n, float scale, float spd)
+//int colorWave(Adafruit_NeoPixel * leds, int n, byte cyclesPerStrip, float spd, byte r1, byte g1, byte b1, byte r2, byte g2, byte b2)
+//int colorBlink(Adafruit_NeoPixel * leds, int n, byte duration, byte r1, byte g1, byte b1, byte r2, byte g2, byte b2) {
+//int colorChase(Adafruit_NeoPixel * leds, int n, byte len, float spd, byte r1, byte g1, byte b1) {
+int customMode = -1;
+int delay_time = 10;
+float floatArgs[10];
+void processCommands() {
+  char buffer[30];
+  boolean recognized = false;
+  char i = 0;
+  while (Serial.available()) {
+    buffer[i++] = Serial.read();
+  }
+  buffer[i] = 0; //null terminate
+  
+  if (i != 0) {
+    Serial.print("> ");
+    String str = String(buffer);
+    Serial.println(str);
+    str.trim();
+    str.toLowerCase();
+    str.toCharArray(buffer,str.length()+1);
+    
+    char * tok = strtok(buffer, " ");
+    tok = strtok(NULL, " "); //ignore first token
+    i = 0;
+    while(tok != NULL) {
+      floatArgs[i++] = parseFloat(tok);
+//      Serial.println(floatArgs[i-1]);
+      tok = strtok(NULL, " ");
+    }
+
+    if (str.startsWith("stop")) {
+      customMode = -1;
+    }
+
+    if (str.startsWith("ecc")) {
+      customMode = 0;
+    }
+    
+    if (str.startsWith("rcc")) {
+      customMode = 1;
+    }
+    
+    if (str.startsWith("cw")) {
+      customMode = 2;
+    }
+
+    if (str.startsWith("cb")) {
+      customMode = 3;
+    }
+    
+    if (str.startsWith("cc")) {
+      customMode = 4;
+    }
+    
+    if (str.startsWith("dt")) {
+      delay_time = floatArgs[0];
+    }
+  }
+}
+
 boolean testMode = false;
 void loop() {
   int i = 0;
   boolean on = false;
-  int mode = 2;
+  int mode = 0;
+  
+  clearStrip(&strip, 255,255,255);
+  strip.show();
+  delay(100);
+  clearStrip(&strip, 0,0,0);
+  strip.show();
   
   while(1) {
-    if ((testMode && isButtonPressed(BUTTON_1)) || manageButtonHold(false) > 2000) {
+    if (customMode != -1) on = false;
+    
+    if ((testMode && isButtonPressed(BUTTON_1)) || manageButtonHold(false) > 1000) {
       on = !on;
-      while (testMode && isButtonPressed(BUTTON_1));
       manageButtonHold(true);
       delay(200);
     }
@@ -135,7 +225,8 @@ void loop() {
       mode++;
     }
     
-    if (!on) { //if we're in off mode, handle special things
+    processCommands();
+    if (customMode == -1 && !on) { //if we're in off mode, handle special things
       if (usbConnected()) {
         clearStrip(&strip, 0,0,0);
         if (isDoneCharging()) {
@@ -144,7 +235,7 @@ void loop() {
           strip.setPixelColor(0, strip.Color(30,30,0));          
         }
         strip.show();
-        delay(200);
+        delay(100);
       } else {
         clearStrip(&strip, 0,0,0);
         strip.show();
@@ -152,17 +243,29 @@ void loop() {
         delay(100);
       }
     } else {
-
-      switch(mode) {
-        case 0: i = entireColorCycle(&strip,i); break;
-        case 1: i = rotatingColorCycle(&strip,i,1,.5); break;
-        case 2: i = colorWave(&strip,i,2,1,0,0,255,255,255,255); break;
-        case 3: i = colorWave(&strip,i,2,2,0,0,255,255,255,255); break;
-        case 4: i = colorWave(&strip,i,2,3,0,0,255,255,255,255); break;
-        default: mode = 0; break;
+      if (customMode != -1) {
+          switch(customMode) {
+            case 0: i = entireColorCycle(&strip,i); break;
+            case 1: i = rotatingColorCycle(&strip,i,floatArgs[0],floatArgs[1]); break;
+            case 2: i = colorWave(&strip,i,floatArgs[0],floatArgs[1],floatArgs[2],floatArgs[3],floatArgs[4],floatArgs[5],floatArgs[6],floatArgs[7]); break;
+            case 3: i = colorBlink(&strip,i,floatArgs[0],floatArgs[1],floatArgs[2],floatArgs[3],floatArgs[4],floatArgs[5],floatArgs[6]); break;
+            case 4: i = colorChase(&strip,i,floatArgs[0],floatArgs[1],floatArgs[2],floatArgs[3],floatArgs[4]); break;
+          }
+      } else {
+        switch(mode) {
+          case 0: i = entireColorCycle(&strip,i); break;
+          case 1: i = rotatingColorCycle(&strip,i,1,.5); break;
+          case 2: i = rotatingColorCycle(&strip,i,3,1); break;
+          case 3: i = colorWave(&strip,i,2,2,255,0,255,255,255,255); break;
+          case 4: i = colorWave(&strip,i,2,2,0,255,0,255,255,0); break;
+          case 5: i = colorWave(&strip,i,2,2,0,0,255,150,200,255); break;
+          case 6: i = colorBlink(&strip,i,10,255,0,0,255,255,255); break;
+          case 7: i = colorChase(&strip,i,5,1,255,255,255); break;
+          default: mode = 0; break;
+        }
       }
       strip.show();
-      delay(10);
+      delay(delay_time);
     }
   }
 }
@@ -200,23 +303,49 @@ int colorWave(Adafruit_NeoPixel * leds, int n, byte cyclesPerStrip, float spd, b
     for (i=0; i<leds->numPixels(); i++) {
       a = isin((int)(multiplier*i+n*spd));
       ratio = ((float)(a + 128)) / (float)255;
-      
-//      r = (int)((float)255 * ratio);
-//      g = (int)((float)255 * ratio);
-//      b = (int)((float)255 * ratio);
-      
-//      Serial.print((float)r1*ratio);
-//      Serial.print("  ");
-//      Serial.print((float)r2*(1.0/ratio));
-//      Serial.print("  ");
-//      Serial.print((1.0-ratio));
-//      Serial.println();
+
       r = (int)((float)r1*ratio + (float)r2*(1.0-ratio));
       g = (int)((float)g1*ratio + (float)g2*(1.0-ratio));
       b = (int)((float)b1*ratio + (float)b2*(1.0-ratio));
       leds->setPixelColor(i,leds->Color(r,g,b));
     }
     return n >= 360*spd ? 0 : n+1;
+}
+
+int colorBlink(Adafruit_NeoPixel * leds, int n, byte duration, byte r1, byte g1, byte b1, byte r2, byte g2, byte b2) {
+    if (n < duration) {
+      clearStrip(leds, r1, g1, b1);
+    } else {
+      clearStrip(leds, r2, g2, b2);      
+    }
+    return n >= duration*2 ? 0 : n+1;
+}
+
+int colorChase(Adafruit_NeoPixel * leds, int n, byte len, float spd, byte r1, byte g1, byte b1) {
+    int rel;
+    int i;
+    byte r, g, b;
+    int offset = (int)(((float)n) * spd);
+//    Serial.print("spd ");
+//    Serial.println(spd);
+//    Serial.print("n ");
+//    Serial.println(n);
+//    Serial.print("n*spd ");
+//    Serial.println(offset);
+    
+//    cc 5 .5 255 255 255
+    for (i=0; i<leds->numPixels(); i++) {
+      rel = (leds->numPixels() + i - offset) % leds->numPixels();
+      if (rel > len) {
+        r = g = b = 0;
+      } else {
+        r = r1*(rel/(float)len);
+        g = g1*(rel/(float)len);
+        b = b1*(rel/(float)len);
+      }
+      leds->setPixelColor(i,leds->Color(r,g,b));
+    }
+    return n >= leds->numPixels()/spd ? 0 : n+1;
 }
 
 int coolmistake1(Adafruit_NeoPixel * leds, int n, byte cyclesPerStrip, float spd, byte r1, byte g1, byte b1, byte r2, byte g2, byte b2) {
