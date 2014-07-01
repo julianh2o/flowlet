@@ -1,5 +1,6 @@
 #include <Adafruit_NeoPixel.h>
 #include <avr/power.h>
+#include <EEPROM.h>
 
 #define CHARGE_PIN 12
 #define LED_PIN 4
@@ -143,9 +144,10 @@ float parseFloat(char * tok) {
 //int colorChase(Adafruit_NeoPixel * leds, int n, byte len, float spd, byte r1, byte g1, byte b1) {
 int customMode = -1;
 int delay_time = 10;
-float floatArgs[10];
+float floatArgs[30];
+char argCount = 0;
 void processCommands() {
-  char buffer[30];
+  char buffer[255];
   boolean recognized = false;
   char i = 0;
   while (Serial.available()) {
@@ -161,14 +163,15 @@ void processCommands() {
     str.toLowerCase();
     str.toCharArray(buffer,str.length()+1);
     
-    char * tok = strtok(buffer, " ");
-    tok = strtok(NULL, " "); //ignore first token
+    char * tok = strtok(buffer, " ,");
+    tok = strtok(NULL, " ,"); //ignore first token
     i = 0;
     while(tok != NULL) {
       floatArgs[i++] = parseFloat(tok);
 //      Serial.println(floatArgs[i-1]);
-      tok = strtok(NULL, " ");
+      tok = strtok(NULL, " ,");
     }
+    argCount = i;
 
     if (str.startsWith("stop")) {
       customMode = -1;
@@ -194,17 +197,92 @@ void processCommands() {
       customMode = 4;
     }
     
+    if (str.startsWith("vcb")) {
+      customMode = 5;
+    }
+    
+    if (str.startsWith("cd")) {
+      customMode = 6;
+    }
+    
     if (str.startsWith("dt")) {
       delay_time = floatArgs[0];
     }
   }
 }
 
+const int entireColorCycleParameterCount = 0;
+const int entireColorCycleVariationCount = 0;
+float entireColorCycleVariations[] = { 
+};
+
+const int rotatingColorCycleParameterCount = 2;
+const int rotatingColorCycleVariationCount = 2;
+float rotatingColorCycleVariations[] = { 
+    1,.5,
+    3,1
+};
+
+const int colorWaveParameterCount = 8;
+const int colorWaveVariationCount = 3;
+float colorWaveVariations[] = { 
+    2,2,255,0,255,255,255,255,
+    2,2,0,255,0,255,255,0,
+    2,2,0,0,255,150,200,255
+};
+
+const int colorBlinkParameterCount = 7;
+const int colorBlinkVariationCount = 2;
+float colorBlinkVariations[] = { 
+    7,255,0,0,255,255,255,
+    5,0,0,255,0,255,0
+};
+
+const int colorChaseParameterCount = 5;
+const int colorChaseVariationCount = 5;
+float colorChaseVariations[] = { 
+    10,1.3,255,255,255,
+    10,.5,255,0,0,
+    15,.8,0,255,0,
+    25,.2,0,0,255,
+    20,.5,255,0,255
+};
+
+
+const int modeCount = 5;
+int parameterCount[] = {entireColorCycleParameterCount,rotatingColorCycleParameterCount,colorWaveParameterCount,colorBlinkParameterCount, colorChaseParameterCount};
+int variationCount[] = {entireColorCycleVariationCount,rotatingColorCycleVariationCount,colorWaveVariationCount,colorBlinkVariationCount, colorChaseVariationCount};
+float * variations[] = {(float*)&entireColorCycleVariations, (float*)&rotatingColorCycleVariations,(float*)&colorWaveVariations,(float*)&colorBlinkVariations,(float*)&colorChaseVariations};
+
 boolean testMode = false;
+
+void loadVariation(int mode, int variation) {
+  int i;
+//  Serial.print("loading.. mode ");
+//  Serial.print(mode);
+//  Serial.print(" variation ");
+//  Serial.println(variation);
+  for (i = 0; i<parameterCount[mode]; i++) {
+//    Serial.println(variations[mode][variation*parameterCount[mode]+i]);
+    floatArgs[i] = variations[mode][variation*parameterCount[mode]+i];
+  } 
+//  Serial.print("mode ");
+//  Serial.println(mode);
+//  Serial.print("variation ");
+//  Serial.println(variation);
+//  Serial.print("variation param count");
+//  Serial.println(parameterCount[mode]);
+//  Serial.println("params:");
+//  for (l = 0; l<parameterCount[mode]; l++) {
+//    Serial.println(variations[mode][variation*parameterCount[mode]+l]);
+//  } 
+}
+
 void loop() {
-  int i = 0;
+  int i=0;
   boolean on = false;
   int mode = 0;
+  int variation = 0;
   
   clearStrip(&strip, 255,255,255);
   strip.show();
@@ -221,8 +299,21 @@ void loop() {
       delay(200);
     }
     
-    if (debounceButton(BUTTON_2)) {
+    if (isButtonPressed(BUTTON_1)) {
       mode++;
+      if (mode >= modeCount) mode = 0;
+      variation = EEPROM.read(mode);
+      if (variation >= variationCount[mode]) variation = 0;
+      loadVariation(mode,variation);
+      delay(500);
+    }
+    
+    if (isButtonPressed(BUTTON_2)) {
+      variation++;
+      if (variation >= variationCount[mode]) variation = 0;
+      EEPROM.write(mode,variation);
+      loadVariation(mode,variation);
+      delay(500);
     }
     
     processCommands();
@@ -243,26 +334,15 @@ void loop() {
         delay(100);
       }
     } else {
-      if (customMode != -1) {
-          switch(customMode) {
-            case 0: i = entireColorCycle(&strip,i); break;
-            case 1: i = rotatingColorCycle(&strip,i,floatArgs[0],floatArgs[1]); break;
-            case 2: i = colorWave(&strip,i,floatArgs[0],floatArgs[1],floatArgs[2],floatArgs[3],floatArgs[4],floatArgs[5],floatArgs[6],floatArgs[7]); break;
-            case 3: i = colorBlink(&strip,i,floatArgs[0],floatArgs[1],floatArgs[2],floatArgs[3],floatArgs[4],floatArgs[5],floatArgs[6]); break;
-            case 4: i = colorChase(&strip,i,floatArgs[0],floatArgs[1],floatArgs[2],floatArgs[3],floatArgs[4]); break;
-          }
-      } else {
-        switch(mode) {
-          case 0: i = entireColorCycle(&strip,i); break;
-          case 1: i = rotatingColorCycle(&strip,i,1,.5); break;
-          case 2: i = rotatingColorCycle(&strip,i,3,1); break;
-          case 3: i = colorWave(&strip,i,2,2,255,0,255,255,255,255); break;
-          case 4: i = colorWave(&strip,i,2,2,0,255,0,255,255,0); break;
-          case 5: i = colorWave(&strip,i,2,2,0,0,255,150,200,255); break;
-          case 6: i = colorBlink(&strip,i,10,255,0,0,255,255,255); break;
-          case 7: i = colorChase(&strip,i,5,1,255,255,255); break;
-          default: mode = 0; break;
-        }
+      int cmode = customMode == -1 ? mode : customMode;
+      switch(cmode) {
+        case 0: i = entireColorCycle(&strip,i); break;
+        case 1: i = rotatingColorCycle(&strip,i,floatArgs[0],floatArgs[1]); break;
+        case 2: i = colorWave(&strip,i,floatArgs[0],floatArgs[1],floatArgs[2],floatArgs[3],floatArgs[4],floatArgs[5],floatArgs[6],floatArgs[7]); break;
+        case 3: i = colorBlink(&strip,i,floatArgs[0],floatArgs[1],floatArgs[2],floatArgs[3],floatArgs[4],floatArgs[5],floatArgs[6]); break;
+        case 4: i = colorChase(&strip,i,floatArgs[0],floatArgs[1],floatArgs[2],floatArgs[3],floatArgs[4]); break;
+        case 5: i = variableColorBlink(&strip,i,argCount,(float *)&floatArgs); break;
+        case 6: i = colorDashes(&strip,i,argCount,(float *)&floatArgs); break;
       }
       strip.show();
       delay(delay_time);
@@ -344,6 +424,25 @@ int colorChase(Adafruit_NeoPixel * leds, int n, byte len, float spd, byte r1, by
         b = b1*(rel/(float)len);
       }
       leds->setPixelColor(i,leds->Color(r,g,b));
+    }
+    return n >= leds->numPixels()/spd ? 0 : n+1;
+}
+
+int variableColorBlink(Adafruit_NeoPixel * leds, int n, byte argLength, float * args) {
+    float duration = args[0];
+    byte colors = (argLength - 1)/3;
+    byte currentColor = n/duration;
+    clearStrip(leds, args[1+currentColor*3],args[2+currentColor*3],args[3+currentColor*3]);
+    return n >= duration*colors ? 0 : n+1;
+}
+
+int colorDashes(Adafruit_NeoPixel * leds, int n, byte argLength, float * args) {
+    float spd = args[0];
+    byte colors = (argLength - 1)/3;
+    int i;
+    for (i=0; i<leds->numPixels(); i++) {
+      byte currentColor = (byte)(((float)((i+(int)(n*spd))%leds->numPixels()))/((float)((float)leds->numPixels() / (float)colors)));
+      leds->setPixelColor(i,leds->Color(args[1+currentColor*3],args[2+currentColor*3],args[3+currentColor*3]));
     }
     return n >= leds->numPixels()/spd ? 0 : n+1;
 }
