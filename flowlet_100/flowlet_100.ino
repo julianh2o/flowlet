@@ -245,6 +245,13 @@ float colorChaseVariations[] = {
     NAN
 };
 
+float variableColorBlinkVariations[] = {
+  7,255,0,0,255,255,255,NAN,
+  6,0,0,255,0,255,0,NAN,
+  7,255,0,0,0,255,0,0,0,255,NAN,
+  NAN
+};
+
 float colorDashesVariations[] = { 
   1,255,0,0,0,255,0,NAN,
   NAN
@@ -262,8 +269,8 @@ float * variations[] = {
   (float*)&entireColorCycleVariations,
   (float*)&rotatingColorCycleVariations,
   (float*)&colorWaveVariations,
-  (float*)&colorBlinkVariations,
   (float*)&colorChaseVariations,
+  (float*)variableColorBlinkVariations,
   (float*)&colorDashesVariations,
   (float*)&pixelAlternationVariations
 };
@@ -339,6 +346,7 @@ void loop() {
     }
     
     if (isButtonPressed(BUTTON_1)) {
+      customMode = -1;
       mode++;
       if (mode >= modeCount) mode = 0;
       variation = EEPROM.read(mode);
@@ -348,6 +356,7 @@ void loop() {
     }
     
     if (isButtonPressed(BUTTON_2)) {
+      customMode = -1;
       variation++;
       if (variation >= variationCount[mode]) variation = 0;
       EEPROM.write(mode,variation);
@@ -378,11 +387,10 @@ void loop() {
         case 0: i = entireColorCycle(&strip,i); break;
         case 1: i = rotatingColorCycle(&strip,i,floatArgs[0],floatArgs[1]); break;
         case 2: i = colorWave(&strip,i,floatArgs[0],floatArgs[1],floatArgs[2],floatArgs[3],floatArgs[4],floatArgs[5],floatArgs[6],floatArgs[7]); break;
-        case 3: i = colorBlink(&strip,i,floatArgs[0],floatArgs[1],floatArgs[2],floatArgs[3],floatArgs[4],floatArgs[5],floatArgs[6]); break;
-        case 4: i = colorChase(&strip,i,floatArgs[0],floatArgs[1],floatArgs[2],floatArgs[3],floatArgs[4]); break;
-        case 5: i = variableColorBlink(&strip,i,argCount,(float *)&floatArgs); break;
-        case 6: i = colorDashes(&strip,i,argCount,(float *)&floatArgs); break;
-        case 7: i = pixelAlternation(&strip,i,argCount,(float *)&floatArgs); break;
+        case 3: i = colorChase(&strip,i,floatArgs[0],floatArgs[1],floatArgs[2],floatArgs[3],floatArgs[4]); break;
+        case 4: i = variableColorBlink(&strip,i,argCount,(float *)&floatArgs); break;
+        case 5: i = colorDashes(&strip,i,argCount,(float *)&floatArgs); break;
+        case 6: i = pixelAlternation(&strip,i,argCount,(float *)&floatArgs); break;
       }
       strip.show();
       delay(delay_time);
@@ -430,15 +438,6 @@ int colorWave(Adafruit_NeoPixel * leds, int n, byte cyclesPerStrip, float spd, b
       leds->setPixelColor(i,leds->Color(r,g,b));
     }
     return n >= 360*spd ? 0 : n+1;
-}
-
-int colorBlink(Adafruit_NeoPixel * leds, int n, byte duration, byte r1, byte g1, byte b1, byte r2, byte g2, byte b2) {
-    if (n < duration) {
-      clearStrip(leds, r1, g1, b1);
-    } else {
-      clearStrip(leds, r2, g2, b2);      
-    }
-    return n >= duration*2 ? 0 : n+1;
 }
 
 int colorChase(Adafruit_NeoPixel * leds, int n, byte len, float spd, byte r1, byte g1, byte b1) {
