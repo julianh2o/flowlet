@@ -19,17 +19,6 @@ int lpDelay(int quarterSeconds) {
   CLKPR = oldClkPr;    // Restore old system clock prescale
 }
 
-void setup() {
-  Serial.begin(9600);
-  strip.begin();
-  strip.setBrightness(10);
-  strip.show();
-  pinMode(CHARGE_PIN,INPUT_PULLUP);
-  pinMode(BUTTON_1,INPUT_PULLUP);
-  pinMode(BUTTON_2,INPUT_PULLUP);
-  power_adc_disable();
-}
-
 uint8_t isinTable8[] = { 
   0, 4, 9, 13, 18, 22, 27, 31, 35, 40, 44, 
   49, 53, 57, 62, 66, 70, 75, 79, 83, 87, 
@@ -168,7 +157,6 @@ void processCommands() {
     i = 0;
     while(tok != NULL) {
       floatArgs[i++] = parseFloat(tok);
-//      Serial.println(floatArgs[i-1]);
       tok = strtok(NULL, " ,");
     }
     argCount = i;
@@ -205,6 +193,10 @@ void processCommands() {
       customMode = 6;
     }
     
+    if (str.startsWith("pa")) {
+      customMode = 7;
+    }
+    
     if (str.startsWith("dt")) {
       delay_time = floatArgs[0];
     }
@@ -213,69 +205,116 @@ void processCommands() {
 
 const int entireColorCycleParameterCount = 0;
 const int entireColorCycleVariationCount = 0;
-float entireColorCycleVariations[] = { 
+float entireColorCycleVariations[] = {
+  NAN
 };
 
 const int rotatingColorCycleParameterCount = 2;
 const int rotatingColorCycleVariationCount = 2;
 float rotatingColorCycleVariations[] = { 
-    1,.5,
-    3,1
+    1,.5,NAN,
+    3,1,NAN,
+    NAN
 };
 
 const int colorWaveParameterCount = 8;
 const int colorWaveVariationCount = 3;
 float colorWaveVariations[] = { 
-    2,2,255,0,255,255,255,255,
-    2,2,0,255,0,255,255,0,
-    2,2,0,0,255,150,200,255
+    2,2,255,0,255,255,255,255,NAN,
+    2,2,0,255,0,255,255,0,NAN,
+    2,2,0,0,255,150,200,255,NAN,
+    NAN
 };
 
 const int colorBlinkParameterCount = 7;
 const int colorBlinkVariationCount = 2;
 float colorBlinkVariations[] = { 
-    7,255,0,0,255,255,255,
-    5,0,0,255,0,255,0
+    7,255,0,0,255,255,255,NAN,
+    5,0,0,255,0,255,0,NAN,
+    NAN
 };
 
 const int colorChaseParameterCount = 5;
 const int colorChaseVariationCount = 5;
 float colorChaseVariations[] = { 
-    10,1.3,255,255,255,
-    10,.5,255,0,0,
-    15,.8,0,255,0,
-    25,.2,0,0,255,
-    20,.5,255,0,255
+    10,1.3,255,255,255,NAN,
+    10,.5,255,0,0,NAN,
+    15,.8,0,255,0,NAN,
+    25,.2,0,0,255,NAN,
+    20,.5,255,0,255,NAN,
+    NAN
 };
 
+float colorDashesVariations[] = { 
+  1,255,0,0,0,255,0,NAN,
+  NAN
+};
 
-const int modeCount = 5;
-int parameterCount[] = {entireColorCycleParameterCount,rotatingColorCycleParameterCount,colorWaveParameterCount,colorBlinkParameterCount, colorChaseParameterCount};
-int variationCount[] = {entireColorCycleVariationCount,rotatingColorCycleVariationCount,colorWaveVariationCount,colorBlinkVariationCount, colorChaseVariationCount};
-float * variations[] = {(float*)&entireColorCycleVariations, (float*)&rotatingColorCycleVariations,(float*)&colorWaveVariations,(float*)&colorBlinkVariations,(float*)&colorChaseVariations};
+float pixelAlternationVariations[] = { 
+  1,255,0,0,0,255,0,0,0,255,NAN,
+  .5,255,255,0,0,0,255,255,0,255,NAN,
+  NAN
+};
+
+const int modeCount = 7;
+int variationCount[modeCount];
+float * variations[] = {
+  (float*)&entireColorCycleVariations,
+  (float*)&rotatingColorCycleVariations,
+  (float*)&colorWaveVariations,
+  (float*)&colorBlinkVariations,
+  (float*)&colorChaseVariations,
+  (float*)&colorDashesVariations,
+  (float*)&pixelAlternationVariations
+};
 
 boolean testMode = false;
 
 void loadVariation(int mode, int variation) {
   int i;
-//  Serial.print("loading.. mode ");
-//  Serial.print(mode);
-//  Serial.print(" variation ");
-//  Serial.println(variation);
-  for (i = 0; i<parameterCount[mode]; i++) {
-//    Serial.println(variations[mode][variation*parameterCount[mode]+i]);
-    floatArgs[i] = variations[mode][variation*parameterCount[mode]+i];
-  } 
-//  Serial.print("mode ");
-//  Serial.println(mode);
-//  Serial.print("variation ");
-//  Serial.println(variation);
-//  Serial.print("variation param count");
-//  Serial.println(parameterCount[mode]);
-//  Serial.println("params:");
-//  for (l = 0; l<parameterCount[mode]; l++) {
-//    Serial.println(variations[mode][variation*parameterCount[mode]+l]);
-//  } 
+  int cvariation = 0;
+  int carg = 0;
+  while(cvariation <= variation) {
+    float val = variations[mode][i++];
+    floatArgs[carg++] = val;
+    if (isnan(val)) {
+      argCount = carg;
+      carg = 0;
+      cvariation++;
+    }
+  }
+}
+
+void setup() {
+  Serial.begin(9600);
+  strip.begin();
+  strip.setBrightness(10);
+  strip.show();
+  pinMode(CHARGE_PIN,INPUT_PULLUP);
+  pinMode(BUTTON_1,INPUT_PULLUP);
+  pinMode(BUTTON_2,INPUT_PULLUP);
+  power_adc_disable();
+  
+  //count variations
+  int mode;
+  for (mode = 0; mode < modeCount; mode++) {
+    int i = 0;
+    int currentVariation = 0;
+    int carg = 0;
+    while(1) {
+      float val = variations[mode][i++];
+      if (isnan(val)) {
+        if (carg == 0) {
+          variationCount[mode] = currentVariation;
+          break;
+        }
+        carg = 0;
+        currentVariation++;
+      } else {
+        carg++; 
+      }
+    }
+  }
 }
 
 void loop() {
@@ -289,7 +328,7 @@ void loop() {
   delay(100);
   clearStrip(&strip, 0,0,0);
   strip.show();
-  
+
   while(1) {
     if (customMode != -1) on = false;
     
@@ -343,6 +382,7 @@ void loop() {
         case 4: i = colorChase(&strip,i,floatArgs[0],floatArgs[1],floatArgs[2],floatArgs[3],floatArgs[4]); break;
         case 5: i = variableColorBlink(&strip,i,argCount,(float *)&floatArgs); break;
         case 6: i = colorDashes(&strip,i,argCount,(float *)&floatArgs); break;
+        case 7: i = pixelAlternation(&strip,i,argCount,(float *)&floatArgs); break;
       }
       strip.show();
       delay(delay_time);
@@ -406,14 +446,7 @@ int colorChase(Adafruit_NeoPixel * leds, int n, byte len, float spd, byte r1, by
     int i;
     byte r, g, b;
     int offset = (int)(((float)n) * spd);
-//    Serial.print("spd ");
-//    Serial.println(spd);
-//    Serial.print("n ");
-//    Serial.println(n);
-//    Serial.print("n*spd ");
-//    Serial.println(offset);
-    
-//    cc 5 .5 255 255 255
+
     for (i=0; i<leds->numPixels(); i++) {
       rel = (leds->numPixels() + i - offset) % leds->numPixels();
       if (rel > len) {
@@ -447,6 +480,17 @@ int colorDashes(Adafruit_NeoPixel * leds, int n, byte argLength, float * args) {
     return n >= leds->numPixels()/spd ? 0 : n+1;
 }
 
+int pixelAlternation(Adafruit_NeoPixel * leds, int n, byte argLength, float * args) {
+    float spd = args[0]/5;
+    byte colors = (argLength - 1)/3;
+    int i;
+    for (i=0; i<leds->numPixels(); i++) {
+      byte currentColor = ((i+(int)(n*spd))%leds->numPixels()) % colors;
+      leds->setPixelColor(i,leds->Color(args[1+currentColor*3],args[2+currentColor*3],args[3+currentColor*3]));
+    }
+    return n >= leds->numPixels()/spd ? 0 : n+1;
+}
+
 int coolmistake1(Adafruit_NeoPixel * leds, int n, byte cyclesPerStrip, float spd, byte r1, byte g1, byte b1, byte r2, byte g2, byte b2) {
     int i;
     byte r, g, b;
@@ -457,11 +501,7 @@ int coolmistake1(Adafruit_NeoPixel * leds, int n, byte cyclesPerStrip, float spd
     for (i=0; i<leds->numPixels(); i++) {
       a = isin((int)(multiplier*i+n*spd));
       ratio = ((float)(a + 128)) / (float)255;
-      
-//      r = (int)((float)255 * ratio);
-//      g = (int)((float)255 * ratio);
-//      b = (int)((float)255 * ratio);
-      Serial.println(ratio);
+
       r = (int)((float)r1*ratio + (float)r2*(1.0/ratio));
       g = (int)((float)g1*ratio + (float)g2*(1.0/ratio));
       b = (int)((float)b1*ratio + (float)b2*(1.0/ratio));
