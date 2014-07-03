@@ -135,6 +135,7 @@ int customMode = -1;
 int delay_time = 10;
 float floatArgs[30];
 char argCount = 0;
+byte state[30];
 void processCommands() {
   char buffer[255];
   boolean recognized = false;
@@ -177,24 +178,28 @@ void processCommands() {
       customMode = 2;
     }
 
-    if (str.startsWith("cb")) {
+    if (str.startsWith("cc")) {
       customMode = 3;
     }
     
-    if (str.startsWith("cc")) {
+    if (str.startsWith("vcb")) {
       customMode = 4;
     }
     
-    if (str.startsWith("vcb")) {
+    if (str.startsWith("cd")) {
       customMode = 5;
     }
     
-    if (str.startsWith("cd")) {
+    if (str.startsWith("pa")) {
       customMode = 6;
     }
     
-    if (str.startsWith("pa")) {
+    if (str.startsWith("cw")) {
       customMode = 7;
+    }
+    
+    if (str.startsWith("cb")) {
+      customMode = 8;
     }
     
     if (str.startsWith("dt")) {
@@ -277,21 +282,6 @@ float * variations[] = {
 
 boolean testMode = false;
 
-void loadVariation(int mode, int variation) {
-  int i;
-  int cvariation = 0;
-  int carg = 0;
-  while(cvariation <= variation) {
-    float val = variations[mode][i++];
-    floatArgs[carg++] = val;
-    if (isnan(val)) {
-      argCount = carg;
-      carg = 0;
-      cvariation++;
-    }
-  }
-}
-
 void setup() {
   Serial.begin(9600);
   strip.begin();
@@ -302,26 +292,7 @@ void setup() {
   pinMode(BUTTON_2,INPUT_PULLUP);
   power_adc_disable();
   
-  //count variations
-  int mode;
-  for (mode = 0; mode < modeCount; mode++) {
-    int i = 0;
-    int currentVariation = 0;
-    int carg = 0;
-    while(1) {
-      float val = variations[mode][i++];
-      if (isnan(val)) {
-        if (carg == 0) {
-          variationCount[mode] = currentVariation;
-          break;
-        }
-        carg = 0;
-        currentVariation++;
-      } else {
-        carg++; 
-      }
-    }
-  }
+  countVariations();
 }
 
 void loop() {
@@ -348,6 +319,7 @@ void loop() {
     if (isButtonPressed(BUTTON_1)) {
       customMode = -1;
       mode++;
+      i = -1;
       if (mode >= modeCount) mode = 0;
       variation = EEPROM.read(mode);
       if (variation >= variationCount[mode]) variation = 0;
@@ -357,6 +329,7 @@ void loop() {
     
     if (isButtonPressed(BUTTON_2)) {
       customMode = -1;
+      i = -1;
       variation++;
       if (variation >= variationCount[mode]) variation = 0;
       EEPROM.write(mode,variation);
@@ -378,7 +351,7 @@ void loop() {
       } else {
         clearStrip(&strip, 0,0,0);
         strip.show();
-        if (!testMode && !anyButtonPressed()) lpDelay(4); //sleep the chip
+        //if (!testMode && !anyButtonPressed()) lpDelay(4); //sleep the chip
         delay(100);
       }
     } else {
@@ -391,6 +364,8 @@ void loop() {
         case 4: i = variableColorBlink(&strip,i,argCount,(float *)&floatArgs); break;
         case 5: i = colorDashes(&strip,i,argCount,(float *)&floatArgs); break;
         case 6: i = pixelAlternation(&strip,i,argCount,(float *)&floatArgs); break;
+        case 7: i = colorWipe(&strip,i,argCount,(float *)&floatArgs); break;
+        case 8: i = colorBounce(&strip,i,argCount,(float *)&floatArgs,(int *)&state); break;
       }
       strip.show();
       delay(delay_time);
@@ -398,96 +373,195 @@ void loop() {
   }
 }
 
+
+void loadVariation(int mode, int variation) {
+  int i;
+  int cvariation = 0;
+  int carg = 0;
+  while(cvariation <= variation) {
+    float val = variations[mode][i++];
+    floatArgs[carg++] = val;
+    if (isnan(val)) {
+      argCount = carg;
+      carg = 0;
+      cvariation++;
+    }
+  }
+}
+
+void countVariations() {
+  int mode;
+  for (mode = 0; mode < modeCount; mode++) {
+    int i = 0;
+    int currentVariation = 0;
+    int carg = 0;
+    while(1) {
+      float val = variations[mode][i++];
+      if (isnan(val)) {
+        if (carg == 0) {
+          variationCount[mode] = currentVariation;
+          break;
+        }
+        carg = 0;
+        currentVariation++;
+      } else {
+        carg++; 
+      }
+    }
+  }
+}
+
 int entireColorCycle(Adafruit_NeoPixel * leds, int n) {
-    int i;
-    byte r, g, b;
-    hue(n,&r,&g,&b);
-    clearStrip(leds, r, g, b);
-    return n >= 255 ? 0 : n+1;
+  if (n == -1) n = 0;
+  int i;
+  byte r, g, b;
+  hue(n,&r,&g,&b);
+  clearStrip(leds, r, g, b);
+  return n >= 255 ? 0 : n+1;
 }
 
 int rotatingColorCycle(Adafruit_NeoPixel * leds, int n, float scale, float spd) {
-    int i,l;
-    int v;
-    byte r, g, b;
-    int animationLength = scale*leds->numPixels();
-    float huePerLed = ((float)255/(float)animationLength);
-    for (i=0; i<leds->numPixels(); i++) {
-      l = ((int)(i+(n*spd))) % animationLength;
-      v = (int)(l*huePerLed);
-      hue(v,&r,&g,&b);
-      leds->setPixelColor(i,leds->Color(r,g,b));
-    }
-    return n >= (int)((float)animationLength/spd) ? 0 : n+1;
+  if (n == -1) n = 0;
+  int i,l;
+  int v;
+  byte r, g, b;
+  int animationLength = scale*leds->numPixels();
+  float huePerLed = ((float)255/(float)animationLength);
+  for (i=0; i<leds->numPixels(); i++) {
+    l = ((int)(i+(n*spd))) % animationLength;
+    v = (int)(l*huePerLed);
+    hue(v,&r,&g,&b);
+    leds->setPixelColor(i,leds->Color(r,g,b));
+  }
+  return n >= (int)((float)animationLength/spd) ? 0 : n+1;
 }
 
 int colorWave(Adafruit_NeoPixel * leds, int n, byte cyclesPerStrip, float spd, byte r1, byte g1, byte b1, byte r2, byte g2, byte b2) {
-    int i;
-    byte r, g, b;
-    int a;
-    float ratio;
-    float multiplier = ((float)360*(int)cyclesPerStrip)/leds->numPixels();
-    spd = spd * 3;
-    for (i=0; i<leds->numPixels(); i++) {
-      a = isin((int)(multiplier*i+n*spd));
-      ratio = ((float)(a + 128)) / (float)255;
+  if (n == -1) n = 0;
+  int i;
+  byte r, g, b;
+  int a;
+  float ratio;
+  float multiplier = ((float)360*(int)cyclesPerStrip)/leds->numPixels();
+  spd = spd * 3;
+  for (i=0; i<leds->numPixels(); i++) {
+    a = isin((int)(multiplier*i+n*spd));
+    ratio = ((float)(a + 128)) / (float)255;
 
-      r = (int)((float)r1*ratio + (float)r2*(1.0-ratio));
-      g = (int)((float)g1*ratio + (float)g2*(1.0-ratio));
-      b = (int)((float)b1*ratio + (float)b2*(1.0-ratio));
-      leds->setPixelColor(i,leds->Color(r,g,b));
-    }
-    return n >= 360*spd ? 0 : n+1;
+    r = (int)((float)r1*ratio + (float)r2*(1.0-ratio));
+    g = (int)((float)g1*ratio + (float)g2*(1.0-ratio));
+    b = (int)((float)b1*ratio + (float)b2*(1.0-ratio));
+    leds->setPixelColor(i,leds->Color(r,g,b));
+  }
+  return n >= 360*spd ? 0 : n+1;
 }
 
 int colorChase(Adafruit_NeoPixel * leds, int n, byte len, float spd, byte r1, byte g1, byte b1) {
-    int rel;
-    int i;
-    byte r, g, b;
-    int offset = (int)(((float)n) * spd);
+  if (n == -1) n = 0;
+  int rel;
+  int i;
+  byte r, g, b;
+  int offset = (int)(((float)n) * spd);
 
-    for (i=0; i<leds->numPixels(); i++) {
-      rel = (leds->numPixels() + i - offset) % leds->numPixels();
-      if (rel > len) {
-        r = g = b = 0;
-      } else {
-        r = r1*(rel/(float)len);
-        g = g1*(rel/(float)len);
-        b = b1*(rel/(float)len);
-      }
-      leds->setPixelColor(i,leds->Color(r,g,b));
+  for (i=0; i<leds->numPixels(); i++) {
+    rel = (leds->numPixels() + i - offset) % leds->numPixels();
+    if (rel > len) {
+      r = g = b = 0;
+    } else {
+      r = r1*(rel/(float)len);
+      g = g1*(rel/(float)len);
+      b = b1*(rel/(float)len);
     }
-    return n >= leds->numPixels()/spd ? 0 : n+1;
+    leds->setPixelColor(i,leds->Color(r,g,b));
+  }
+  return n >= leds->numPixels()/spd ? 0 : n+1;
 }
 
 int variableColorBlink(Adafruit_NeoPixel * leds, int n, byte argLength, float * args) {
-    float duration = args[0];
-    byte colors = (argLength - 1)/3;
-    byte currentColor = n/duration;
-    clearStrip(leds, args[1+currentColor*3],args[2+currentColor*3],args[3+currentColor*3]);
-    return n >= duration*colors ? 0 : n+1;
+  if (n == -1) n = 0;
+  float duration = args[0];
+  byte colors = (argLength - 1)/3;
+  byte currentColor = n/duration;
+  clearStrip(leds, args[1+currentColor*3],args[2+currentColor*3],args[3+currentColor*3]);
+  return n >= duration*colors ? 0 : n+1;
 }
 
 int colorDashes(Adafruit_NeoPixel * leds, int n, byte argLength, float * args) {
-    float spd = args[0];
-    byte colors = (argLength - 1)/3;
-    int i;
-    for (i=0; i<leds->numPixels(); i++) {
-      byte currentColor = (byte)(((float)((i+(int)(n*spd))%leds->numPixels()))/((float)((float)leds->numPixels() / (float)colors)));
-      leds->setPixelColor(i,leds->Color(args[1+currentColor*3],args[2+currentColor*3],args[3+currentColor*3]));
-    }
-    return n >= leds->numPixels()/spd ? 0 : n+1;
+  if (n == -1) n = 0;
+  float spd = args[0];
+  byte colors = (argLength - 1)/3;
+  int i;
+  for (i=0; i<leds->numPixels(); i++) {
+    byte currentColor = (byte)(((float)((i+(int)(n*spd))%leds->numPixels()))/((float)((float)leds->numPixels() / (float)colors)));
+    leds->setPixelColor(i,leds->Color(args[1+currentColor*3],args[2+currentColor*3],args[3+currentColor*3]));
+  }
+  return n >= leds->numPixels()/spd ? 0 : n+1;
 }
 
 int pixelAlternation(Adafruit_NeoPixel * leds, int n, byte argLength, float * args) {
-    float spd = args[0]/5;
-    byte colors = (argLength - 1)/3;
-    int i;
-    for (i=0; i<leds->numPixels(); i++) {
-      byte currentColor = ((i+(int)(n*spd))%leds->numPixels()) % colors;
-      leds->setPixelColor(i,leds->Color(args[1+currentColor*3],args[2+currentColor*3],args[3+currentColor*3]));
+  if (n == -1) n = 0;
+  float spd = args[0]/5;
+  byte colors = (argLength - 1)/3;
+  int i;
+  for (i=0; i<leds->numPixels(); i++) {
+    byte currentColor = ((i+(int)(n*spd))%leds->numPixels()) % colors;
+    leds->setPixelColor(i,leds->Color(args[1+currentColor*3],args[2+currentColor*3],args[3+currentColor*3]));
+  }
+  return n >= leds->numPixels()/spd ? 0 : n+1;
+}
+
+int colorWipe(Adafruit_NeoPixel * leds, int n, byte argLength, float * args) {
+  if (n == -1) n = 0;
+  float spd = args[0];
+  byte colors = (argLength - 1)/3;
+  int i;
+  int colorDuration = leds->numPixels()/spd;
+  int cColor = n/colorDuration;
+  int nColor = (cColor + 1) % colors;
+  int pixelSplit = n % colorDuration;
+  Serial.println("");
+  Serial.print("n: ");
+  Serial.println(n);
+  Serial.print("cColor: ");
+  Serial.println(cColor);
+  Serial.print("nColor: ");
+  Serial.println(nColor);
+  Serial.print("pixelSplit: ");
+  Serial.println(pixelSplit);
+  for (i=0; i<leds->numPixels(); i++) {
+    byte currentColor = i > pixelSplit ? cColor : nColor;
+    leds->setPixelColor(i,leds->Color(args[1+currentColor*3],args[2+currentColor*3],args[3+currentColor*3]));
+  }
+  return n >= colorDuration*colors ? 0 : n+1;
+}
+
+int colorBounce(Adafruit_NeoPixel * leds, int n, byte argLength, float * args, int * state) {
+  float spd = args[0];
+  byte colors = (argLength - 1)/3;
+  int i,l;
+  if (n == -1) {
+    for (i=0; i<colors; i++) {
+      state[i*2] = random(0,leds->numPixels());
+      state[i*2+1] = random(0,2)*2 - 1;
     }
-    return n >= leds->numPixels()/spd ? 0 : n+1;
+    n = 0; 
+  }
+  
+  byte r,g,b;
+  for (i=0; i<leds->numPixels(); i++) {
+    r = 0;
+    g = 0;
+    b = 0;
+    for (l=0; l<colors; l++) {
+      int dist = i - l;
+      dist = abs(dist);
+      if (dist > 3) break;
+      r = (int)(r + ((float)args[1+l*3] * ((float)dist/3.0)));
+      g = (int)(g + ((float)args[2+l*3] * ((float)dist/3.0)));
+      b = (int)(b + ((float)args[3+l*3] * ((float)dist/3.0)));
+    }
+    leds->setPixelColor(i,leds->Color(r,b,g));
+  }
 }
 
 int coolmistake1(Adafruit_NeoPixel * leds, int n, byte cyclesPerStrip, float spd, byte r1, byte g1, byte b1, byte r2, byte g2, byte b2) {
